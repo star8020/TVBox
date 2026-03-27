@@ -1,0 +1,72 @@
+name: Build TVBox APK
+
+于:
+  push:
+    分支: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # 2. 配置JDK 17
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      # 3. 配置Android SDK/NDK
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          android-sdk-build-tools: '34.0.0'
+          android-sdk-platforms: 'android-34'
+          android-ndk-version: '25.2.9519653'
+
+      # 4. 安装Python 3.8（修复apt找不到包问题）
+      - name: Install Python 3.8 (fix apt locate error)
+        run: |
+          sudo add-apt-repository ppa:deadsnakes/ppa -y
+          sudo apt update
+          sudo apt install -y python3.8 python3.8-dev python3.8-distutils python3-pip
+          sudo update-alternatives --install /usr/bin/python python /usr/bin/python3.8 1
+          sudo update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.8 1
+          python --version
+          python3 --version
+
+      # 5. 安装Python依赖
+      - name: Install Python dependencies
+        run: |
+          pip install lxml ujson pyquery requests jsonpath cachetools pycryptodome beautifulsoup4
+
+      # 6. 授予Gradle执行权限
+      - name: Grant execute permission to gradlew
+        run: chmod +x ./gradlew
+
+      # 7. 编译APK（Java版本，无密钥依赖）
+      - name: Build Release APK
+        run: |
+          ./gradlew assembleArmeabiGenericNormalRelease assembleArm64GenericNormalRelease
+
+      # 8. 整理APK文件
+      - name: Prepare APK artifacts
+        run: |
+          mkdir -p ${{ github.workspace }}/output-apk/
+          find ${{ github.workspace }} -name "*.apk" -type f -exec cp {} ${{ github.workspace }}/output-apk/ \;
+          ls -l ${{ github.workspace }}/output-apk/
+
+      # 9. 上传APK（使用最新v4版本，解决废弃报错）
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4  # 核心：确认是v4版本，无v3残留
+        with:
+          name: TVBox-APK-${{ github.run_id }}
+          path: ${{ github.workspace }}/output-apk/*.apk
+          retention-days: 30  # 可选：设置APK保留30天（默认90天，可按需调整）
